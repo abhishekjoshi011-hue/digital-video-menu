@@ -5,6 +5,7 @@ import MenuFilters from './components/MenuFilters';
 import MenuList from './components/MenuList';
 import CartSummary from './components/CartSummary';
 import DishDetailsModal from './components/DishDetailsModal';
+import ScrollStory from './components/ScrollStory';
 import './App.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
@@ -73,6 +74,9 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
   const queryParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const qrToken = queryParams.get('t') || '';
   const tenantId = queryParams.get('tenant') || defaultTenantId;
+  const backgroundVideoUrl =
+    import.meta.env.VITE_MENU_BG_VIDEO_URL ||
+    'https://videos.pexels.com/video-files/2600043/2600043-hd_1920_1080_30fps.mp4';
 
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +84,7 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
   const [selectedType, setSelectedType] = useState('all');
   const [selectedDishKind, setSelectedDishKind] = useState('All dishes');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showStory, setShowStory] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [selectedDish, setSelectedDish] = useState(null);
   const [orderState, setOrderState] = useState({ submitting: false, message: '' });
@@ -294,65 +299,135 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesCategory && matchesType && matchesDishKind && matchesSearch;
   });
+  const featuredItems = useMemo(
+    () => menuItems.filter((item) => item?.image || item?.imageUrl).slice(0, 3),
+    [menuItems]
+  );
 
   const totalAmount = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   return (
-    <div className="menu-page">
-      <MenuHeader />
-
-      <MenuFilters
-        searchTerm={searchTerm}
-        onSearch={setSearchTerm}
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategoryChange={setSelectedCategory}
-        selectedType={selectedType}
-        onTypeChange={setSelectedType}
-      />
-
-      <div className="content-layout">
-        <aside className="dish-kind-panel">
-          <h3>Popular Types</h3>
-          <div className="dish-kind-list">
-            {dishKindOptions.map((option) => (
-              <button
-                key={option.label}
-                type="button"
-                className={`dish-kind-btn ${selectedDishKind === option.label ? 'active' : ''}`}
-                onClick={() => setSelectedDishKind(option.label)}
-              >
-                <span>{option.label}</span>
-                <small>{option.count}</small>
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="menu-content">
-          {loading ? (
-            <div className="loading-state">
-              <h2>Fetching delicious menu...</h2>
+    <div className="menu-experience">
+      <div className="menu-page">
+        <section className="top-stage">
+          <MenuHeader backgroundVideoUrl={backgroundVideoUrl} />
+          <aside className="brand-story" aria-label="Restaurant story">
+            <p className="story-kicker">House Signature</p>
+            <h2>Timeless Craft, Modern Table</h2>
+            <p>
+              Seasonal ingredients, precise plating, and elevated service. Browse the collection and compose your
+              perfect course.
+            </p>
+            <div className="story-tags">
+              <span>Chef Curated</span>
+              <span>Fresh Daily</span>
+              <span>Table Service</span>
             </div>
-          ) : (
-            <MenuList
-              items={filteredItems}
-              onAddToCart={handleAddToCart}
-              onOpenDishDetails={setSelectedDish}
-            />
-          )}
+          </aside>
         </section>
 
-        <CartSummary
-          cartItems={cartItems}
-          totalAmount={totalAmount}
-          onIncrement={handleIncrement}
-          onDecrement={handleDecrement}
-          onPlaceOrder={placeOrder}
-          orderSubmitting={orderState.submitting}
-          orderMessage={orderState.message}
+        <section className="menu-quick-actions" aria-label="Quick actions">
+          <button
+            type="button"
+            className="story-toggle-btn"
+            onClick={() => setShowStory((prev) => !prev)}
+            aria-expanded={showStory}
+            aria-controls="chef-story-section"
+          >
+            {showStory ? 'Hide Chef Story' : 'Explore Chef Story'}
+          </button>
+          <a className="jump-menu-btn" href="#menu-selection">Go To Menu</a>
+        </section>
+
+        {featuredItems.length > 0 && (
+          <section className="chef-highlights" aria-label="Chef recommends">
+            <div className="chef-highlights-head">
+              <h3>Maison Selection</h3>
+              <p>Curated highlights from the kitchen</p>
+            </div>
+            <div className="chef-highlights-grid">
+              {featuredItems.map((item) => (
+                <article key={item.id || item.name} className="chef-highlight-card">
+                  <img src={item.image || item.imageUrl} alt={item.name} />
+                  <div>
+                    <h4>{item.name}</h4>
+                    <small>{item.category || 'Signature'}</small>
+                    <p>${Number(item.price || 0).toFixed(2)}</p>
+                  </div>
+                  <button type="button" onClick={() => handleAddToCart(item)}>Add</button>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {showStory && (
+          <div id="chef-story-section">
+            <ScrollStory items={menuItems} loading={loading} />
+          </div>
+        )}
+
+        <MenuFilters
+          searchTerm={searchTerm}
+          onSearch={setSearchTerm}
+          categories={categories}
+          selectedCategory={selectedCategory}
+          onCategoryChange={setSelectedCategory}
+          selectedType={selectedType}
+          onTypeChange={setSelectedType}
         />
+
+        <div className="content-layout">
+          <aside className="dish-kind-panel">
+            <h3>Popular Types</h3>
+            <div className="dish-kind-list">
+              {dishKindOptions.map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  className={`dish-kind-btn ${selectedDishKind === option.label ? 'active' : ''}`}
+                  onClick={() => setSelectedDishKind(option.label)}
+                >
+                  <span>{option.label}</span>
+                  <small>{option.count}</small>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <section className="menu-content" id="menu-selection">
+            <div className="menu-content-header">
+              <h2>Menu Selection</h2>
+              <p>
+                Showing <strong>{filteredItems.length}</strong> of <strong>{menuItems.length}</strong> dishes
+              </p>
+            </div>
+            {loading ? (
+              <div className="loading-state">
+                <h2>Fetching delicious menu...</h2>
+              </div>
+            ) : (
+              <MenuList
+                items={filteredItems}
+                onAddToCart={handleAddToCart}
+                onOpenDishDetails={setSelectedDish}
+              />
+            )}
+          </section>
+
+        <CartSummary
+            cartItems={cartItems}
+            totalAmount={totalAmount}
+            onIncrement={handleIncrement}
+            onDecrement={handleDecrement}
+            onPlaceOrder={placeOrder}
+            orderSubmitting={orderState.submitting}
+            orderMessage={orderState.message}
+          />
+        </div>
       </div>
+
+      <a className="floating-skip-menu" href="#menu-selection">Menu</a>
 
       <DishDetailsModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
     </div>
@@ -386,6 +461,22 @@ function AdminConsole({ apiBaseUrl }) {
 
   const authHeaders = auth?.token ? { Authorization: `Bearer ${auth.token}` } : {};
   const statusOptions = ['PLACED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
+  const getApiErrorMessage = (error, fallback) => {
+    const status = Number(error?.response?.status || 0);
+    const backendMessage = error?.response?.data?.message;
+
+    if (backendMessage) return backendMessage;
+    if (status === 401 || status === 403) {
+      return `${fallback} (session expired or insufficient role). Please login again with an ADMIN/MANAGER/OWNER account.`;
+    }
+    if (status >= 500) {
+      return `${fallback} (server error ${status}). Check backend logs.`;
+    }
+    if (!error?.response) {
+      return `${fallback} (network error). Verify backend is reachable at ${apiBaseUrl}.`;
+    }
+    return `${fallback} (HTTP ${status}).`;
+  };
 
   const fetchOrders = async (tableNumber) => {
     if (!auth?.token) return;
@@ -411,7 +502,7 @@ function AdminConsole({ apiBaseUrl }) {
       const response = await axios.get(`${apiBaseUrl}/api/admin/qr/tables`, { headers: authHeaders });
       setQrRecords(response.data || []);
     } catch (error) {
-      setQrMessage(error?.response?.data?.message || 'Unable to load QR list.');
+      setQrMessage(getApiErrorMessage(error, 'Unable to load QR list.'));
     }
   };
 
@@ -491,7 +582,7 @@ function AdminConsole({ apiBaseUrl }) {
       setQrMessage(`QR URL ready for table ${parsed}.`);
       fetchQrRecords();
     } catch (error) {
-      setQrMessage(error?.response?.data?.message || 'Unable to generate QR URL.');
+      setQrMessage(getApiErrorMessage(error, 'Unable to generate QR URL'));
     }
   };
 
@@ -509,7 +600,7 @@ function AdminConsole({ apiBaseUrl }) {
       setQrMessage(`QR URL regenerated for table ${parsed}.`);
       fetchQrRecords();
     } catch (error) {
-      setQrMessage(error?.response?.data?.message || 'Unable to regenerate QR URL.');
+      setQrMessage(getApiErrorMessage(error, 'Unable to regenerate QR URL'));
     }
   };
 
@@ -525,7 +616,7 @@ function AdminConsole({ apiBaseUrl }) {
       }
       fetchQrRecords();
     } catch (error) {
-      setQrMessage(error?.response?.data?.message || 'Unable to remove QR.');
+      setQrMessage(getApiErrorMessage(error, 'Unable to remove QR'));
     }
   };
 

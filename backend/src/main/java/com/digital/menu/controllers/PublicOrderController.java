@@ -24,6 +24,7 @@ public class PublicOrderController {
 
     @PostMapping("/orders")
     public RestaurantOrder placeOrderWithQrToken(@RequestBody PublicPlaceOrderRequest request) {
+        requireIdempotencyKey(request.getIdempotencyKey());
         var context = tableQrService.validatePublicQrToken(request.getQrToken());
         return orderService.placeOrder(
             context.tenantId(),
@@ -38,6 +39,7 @@ public class PublicOrderController {
         if (request.getQrToken() == null || request.getQrToken().isBlank()) {
             throw new IllegalArgumentException("qrToken is required");
         }
+        requireIdempotencyKey(request.getIdempotencyKey());
         var context = tableQrService.validatePublicQrToken(request.getQrToken());
         if (!tenantId.equals(context.tenantId())) {
             throw new IllegalArgumentException("Tenant mismatch for QR token");
@@ -48,5 +50,11 @@ public class PublicOrderController {
             request.getItems(),
             request.getIdempotencyKey()
         );
+    }
+
+    private void requireIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("idempotencyKey is required");
+        }
     }
 }

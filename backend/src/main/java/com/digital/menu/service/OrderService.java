@@ -50,16 +50,17 @@ public class OrderService {
         if (items == null || items.isEmpty()) {
             throw new IllegalArgumentException("Order must contain at least one item");
         }
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("idempotencyKey is required");
+        }
 
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            var existing = orderRepository.findFirstByTenantIdAndTableNumberAndIdempotencyKeyOrderByCreatedAtDesc(
-                tenantId,
-                tableNumber,
-                idempotencyKey
-            );
-            if (existing.isPresent()) {
-                return markDelay(existing.get());
-            }
+        var existing = orderRepository.findFirstByTenantIdAndTableNumberAndIdempotencyKeyOrderByCreatedAtDesc(
+            tenantId,
+            tableNumber,
+            idempotencyKey
+        );
+        if (existing.isPresent()) {
+            return markDelay(existing.get());
         }
 
         List<OrderItem> sanitizedItems = validateAndNormalizeItems(tenantId, items);
@@ -84,22 +85,15 @@ public class OrderService {
             orderStreamService.publishOrderCreated(tenantId, saved);
             return saved;
         } catch (DuplicateKeyException ex) {
-            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-                return orderRepository
-                    .findFirstByTenantIdAndTableNumberAndIdempotencyKeyOrderByCreatedAtDesc(
-                        tenantId,
-                        tableNumber,
-                        idempotencyKey
-                    )
-                    .map(this::markDelay)
-                    .orElseThrow(() -> ex);
-            }
-            throw ex;
+            return orderRepository
+                .findFirstByTenantIdAndTableNumberAndIdempotencyKeyOrderByCreatedAtDesc(
+                    tenantId,
+                    tableNumber,
+                    idempotencyKey
+                )
+                .map(this::markDelay)
+                .orElseThrow(() -> ex);
         }
-    }
-
-    public RestaurantOrder placeOrder(String tenantId, Integer tableNumber, List<OrderItem> items) {
-        return placeOrder(tenantId, tableNumber, items, null);
     }
 
     public List<RestaurantOrder> getOrdersForTenant(String tenantId) {
