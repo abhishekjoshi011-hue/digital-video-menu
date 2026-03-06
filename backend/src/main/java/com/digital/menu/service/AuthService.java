@@ -67,6 +67,8 @@ public class AuthService {
         user.setUsername(request.getUsername());
         user.setTenantId(request.getTenantId());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setBackgroundVideoUrl(trimToEmpty(request.getBackgroundVideoUrl()));
+        user.setBackgroundImageUrl(trimToEmpty(request.getBackgroundImageUrl()));
         String role = normalizeRole(request.getRole());
         user.setRole(role);
         adminUserRepository.save(user);
@@ -99,5 +101,11 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid role");
         }
         return role;
+    }
+
+    private String trimToEmpty(String value) {
+        if (value == null) return "";
+        String trimmed = value.trim();
+        return trimmed;
     }
 }

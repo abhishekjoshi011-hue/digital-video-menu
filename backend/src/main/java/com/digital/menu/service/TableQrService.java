@@ -5,6 +5,8 @@ import com.digital.menu.errors.ErrorMessages;
 import com.digital.menu.model.TableQrCode;
 import com.digital.menu.repository.TableQrCodeRepository;
 import com.digital.menu.security.QrTokenService;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -106,11 +108,12 @@ public class TableQrService implements TableQrServicePort {
     private QrTokenResponse generateNew(String tenantId, Integer tableNumber) {
         Instant now = Instant.now();
         String token = qrTokenService.generateToken(tenantId, tableNumber);
+        String encodedTenant = URLEncoder.encode(tenantId, StandardCharsets.UTF_8);
         TableQrCode qrCode = new TableQrCode();
         qrCode.setTenantId(tenantId);
         qrCode.setTableNumber(tableNumber);
         qrCode.setToken(token);
-        qrCode.setMenuUrl(publicMenuBaseUrl + "/?t=" + token);
+        qrCode.setMenuUrl(publicMenuBaseUrl + "/?t=" + token + "&tenant=" + encodedTenant);
         qrCode.setActive(true);
         qrCode.setCreatedAt(now);
         qrCode.setUpdatedAt(now);

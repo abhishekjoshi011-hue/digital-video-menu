@@ -1,30 +1,5 @@
-import { useState } from 'react';
-
-const getYoutubeEmbedUrl = (videoUrl) => {
-  if (!videoUrl) return null;
-
-  try {
-    const url = new URL(videoUrl);
-
-    if (url.hostname.includes('youtu.be')) {
-      const id = url.pathname.replace('/', '');
-      return id
-        ? `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&playsinline=1&rel=0`
-        : null;
-    }
-
-    if (url.hostname.includes('youtube.com')) {
-      const id = url.searchParams.get('v');
-      return id
-        ? `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&playsinline=1&rel=0`
-        : null;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-};
+import { useEffect, useState } from 'react';
+import DishMediaCarousel from './DishMediaCarousel';
 
 const extractAddOns = (dish) => {
   const raw = dish?.addOns ?? dish?.addons ?? dish?.addOnOptions ?? dish?.addonOptions;
@@ -44,10 +19,12 @@ const extractAddOns = (dish) => {
 function DishDetailsModal({ dish, onClose }) {
   const [selectedAddOns, setSelectedAddOns] = useState([]);
 
+  useEffect(() => {
+    setSelectedAddOns([]);
+  }, [dish?.id, dish?.name]);
+
   if (!dish) return null;
 
-  const embedUrl = getYoutubeEmbedUrl(dish.videoUrl);
-  const imageSrc = dish.image || dish.imageUrl;
   const addOns = extractAddOns(dish);
 
   const toggleAddon = (name) => {
@@ -66,21 +43,12 @@ function DishDetailsModal({ dish, onClose }) {
         <h2>{dish.name}</h2>
 
         <div className="dish-modal-video">
-          {embedUrl ? (
-            <iframe
-              src={embedUrl}
-              title={`${dish.name} video`}
-              loading="lazy"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          ) : dish.videoUrl ? (
-            <video src={dish.videoUrl} autoPlay muted loop playsInline controls />
-          ) : imageSrc ? (
-            <img src={imageSrc} alt={dish.name} className="dish-modal-image" />
-          ) : (
-            <div className="dish-video-empty">No video available for this dish.</div>
-          )}
+          <DishMediaCarousel
+            dish={dish}
+            showDots
+            showArrows
+            emptyLabel="No media available for this dish."
+          />
         </div>
 
         <div className="dish-modal-section">

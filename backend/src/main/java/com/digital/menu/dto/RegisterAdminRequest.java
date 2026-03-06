@@ -5,6 +5,8 @@ public class RegisterAdminRequest {
     private String password;
     private String tenantId;
     private String role;
+    private String backgroundVideoUrl;
+    private String backgroundImageUrl;
 
     public String getUsername() {
         return username;
@@ -36,5 +38,21 @@ public class RegisterAdminRequest {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public String getBackgroundVideoUrl() {
+        return backgroundVideoUrl;
+    }
+
+    public void setBackgroundVideoUrl(String backgroundVideoUrl) {
+        this.backgroundVideoUrl = backgroundVideoUrl;
+    }
+
+    public String getBackgroundImageUrl() {
+        return backgroundImageUrl;
+    }
+
+    public void setBackgroundImageUrl(String backgroundImageUrl) {
+        this.backgroundImageUrl = backgroundImageUrl;
     }
 }

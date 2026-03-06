@@ -6,6 +6,8 @@ import MenuList from './components/MenuList';
 import CartSummary from './components/CartSummary';
 import DishDetailsModal from './components/DishDetailsModal';
 import ScrollStory from './components/ScrollStory';
+import DishMediaCarousel from './components/DishMediaCarousel';
+import { Component as IconTabs3D } from './components/ui/3d-icon-tabs-1';
 import './App.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
@@ -81,11 +83,9 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
   const queryParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const qrToken = queryParams.get('t') || '';
   const tenantId = queryParams.get('tenant') || defaultTenantId;
-  const backgroundVideoUrl =
-    import.meta.env.VITE_MENU_BG_VIDEO_URL ||
-    'https://videos.pexels.com/video-files/2600043/2600043-hd_1920_1080_30fps.mp4';
 
   const [menuItems, setMenuItems] = useState([]);
+  const [branding, setBranding] = useState({ tenantId: '', backgroundVideoUrl: '', backgroundImageUrl: '' });
   const [loading, setLoading] = useState(true);
   const [selectedCategoryGroup, setSelectedCategoryGroup] = useState('food');
   const [selectedCategory, setSelectedCategory] = useState('group:food');
@@ -93,6 +93,7 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showStory, setShowStory] = useState(false);
   const [cartItems, setCartItems] = useState([]);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [selectedDish, setSelectedDish] = useState(null);
   const [orderState, setOrderState] = useState({ submitting: false, message: '' });
   const retryInFlightRef = useRef(false);
@@ -115,6 +116,22 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
     fetchMenu();
   }, [apiBaseUrl, qrToken, tenantId]);
 
+  useEffect(() => {
+    const fetchBranding = async () => {
+      try {
+        const url = qrToken
+          ? `${apiBaseUrl}/api/public/branding?t=${encodeURIComponent(qrToken)}`
+          : `${apiBaseUrl}/api/public/${tenantId}/branding`;
+        const response = await axios.get(url);
+        setBranding(response.data || { tenantId: '', backgroundVideoUrl: '', backgroundImageUrl: '' });
+      } catch (error) {
+        console.error('Failed to fetch branding', error);
+        setBranding({ tenantId: '', backgroundVideoUrl: '', backgroundImageUrl: '' });
+      }
+    };
+    fetchBranding();
+  }, [apiBaseUrl, qrToken, tenantId]);
+
   const handleAddToCart = (dish) => {
     setCartItems((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === dish.id);
@@ -125,6 +142,9 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
       }
       return [...prevCart, { ...dish, quantity: 1 }];
     });
+    if (window.matchMedia('(max-width: 980px)').matches) {
+      setMobileCartOpen(true);
+    }
   };
 
   const handleIncrement = (id) => {
@@ -193,6 +213,7 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
       await axios.post(`${apiBaseUrl}/api/public/orders`, payload);
 
       setCartItems([]);
+      setMobileCartOpen(false);
       setOrderState({ submitting: false, message: 'Order placed successfully.' });
     } catch (error) {
       const isNetworkFailure = !error?.response;
@@ -201,6 +222,7 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
       if (isNetworkFailure || isRetryableServerFailure) {
         queueOrder(payload);
         setCartItems([]);
+        setMobileCartOpen(false);
         setOrderState({
           submitting: false,
           message: 'Connection issue. Order saved locally and will auto-retry when network is back.'
@@ -328,6 +350,27 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
     }
     return activeCategoryOptions.find((option) => option.key === selectedCategory)?.label || 'All';
   }, [activeCategoryOptions, selectedCategory]);
+  const categoryGroupTabs = useMemo(
+    () =>
+      CATEGORY_GROUPS.map((group) => ({
+        id: group.key,
+        label: group.label,
+        icon: group.key === 'food' ? '🍽️' : group.key === 'beverages' ? '🍹' : '🍨',
+        video_url:
+          group.key === 'food'
+            ? 'https://a0.muscache.com/videos/search-bar-icons/webm/house-selected.webm'
+            : group.key === 'beverages'
+              ? 'https://a0.muscache.com/videos/search-bar-icons/webm/balloon-selected.webm'
+              : 'https://a0.muscache.com/videos/search-bar-icons/webm/consierge-selected.webm',
+        initial_render_url:
+          group.key === 'food'
+            ? 'https://a0.muscache.com/videos/search-bar-icons/webm/house-twirl-selected.webm'
+            : group.key === 'beverages'
+              ? 'https://a0.muscache.com/videos/search-bar-icons/webm/balloon-twirl.webm'
+              : 'https://a0.muscache.com/videos/search-bar-icons/webm/consierge-twirl.webm'
+      })),
+    []
+  );
 
   const filteredItems = menuItems.filter((item) => {
     const itemCategory = normalizeCategoryKey(item?.category || 'Uncategorized');
@@ -340,9 +383,28 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesCategory && matchesType && matchesSearch;
   });
-  const featuredItems = useMemo(
-    () => menuItems.filter((item) => item?.image || item?.imageUrl).slice(0, 3),
-    [menuItems]
+  const featuredItems = useMemo(() => {
+    const explicit = menuItems.filter((item) => item?.isBestSeller === true || item?.isBestseller === true);
+    if (explicit.length > 0) {
+      return explicit.slice(0, 3);
+    }
+    return menuItems.slice(0, 3);
+  }, [menuItems]);
+  const brandTitle = useMemo(() => {
+    const sourceTenant = branding?.tenantId || menuItems.find((item) => item?.tenantId)?.tenantId || tenantId || 'digital-menu';
+    return String(sourceTenant)
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }, [branding?.tenantId, menuItems, tenantId]);
+  const backgroundVideoUrl = useMemo(
+    () => String(branding?.backgroundVideoUrl || '').trim(),
+    [branding?.backgroundVideoUrl]
+  );
+  const backgroundImageUrl = useMemo(
+    () => String(branding?.backgroundImageUrl || '').trim(),
+    [branding?.backgroundImageUrl]
   );
 
   const totalAmount = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -351,7 +413,11 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
     <div className="menu-experience">
       <div className="menu-page">
         <section className="top-stage">
-          <MenuHeader backgroundVideoUrl={backgroundVideoUrl} />
+          <MenuHeader
+            backgroundVideoUrl={backgroundVideoUrl}
+            backgroundImageUrl={backgroundImageUrl}
+            title={brandTitle}
+          />
         </section>
 
         <section className="menu-quick-actions" aria-label="Quick actions">
@@ -368,21 +434,25 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
         </section>
 
         {featuredItems.length > 0 && (
-          <section className="chef-highlights" aria-label="Chef recommends">
+          <section className="chef-highlights" aria-label="Our bestsellers">
             <div className="chef-highlights-head">
-              <h3>Maison Selection</h3>
-              <p>Curated highlights from the kitchen</p>
+              <h3>Our Bestsellers</h3>
+              <p>Top picks your guests keep reordering</p>
             </div>
             <div className="chef-highlights-grid">
               {featuredItems.map((item) => (
                 <article key={item.id || item.name} className="chef-highlight-card">
-                  <img src={item.image || item.imageUrl} alt={item.name} />
-                  <div>
+                  <div className="chef-highlight-left">
+                    <div className="chef-highlight-media">
+                      <DishMediaCarousel dish={item} emptyLabel="No media" />
+                    </div>
+                    <strong className="chef-highlight-price">${Number(item.price || 0).toFixed(2)}</strong>
+                  </div>
+                  <div className="chef-highlight-right">
                     <h4>{item.name}</h4>
                     <small>{item.category || 'Signature'}</small>
-                    <p>${Number(item.price || 0).toFixed(2)}</p>
+                    <button type="button" onClick={() => handleAddToCart(item)}>Add to Cart</button>
                   </div>
-                  <button type="button" onClick={() => handleAddToCart(item)}>Add</button>
                 </article>
               ))}
             </div>
@@ -405,21 +475,17 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
         <div className="content-layout">
           <aside className="dish-kind-panel">
             <h3>Categories</h3>
-            <div className="category-breadcrumb-groups" role="tablist" aria-label="Category groups">
-              {CATEGORY_GROUPS.map((group) => (
-                <button
-                  key={group.key}
-                  type="button"
-                  className={selectedCategoryGroup === group.key ? 'active' : ''}
-                  onClick={() => {
-                    setSelectedCategoryGroup(group.key);
-                    setSelectedCategory(`group:${group.key}`);
-                  }}
-                >
-                  {group.label}
-                </button>
-              ))}
-            </div>
+            <IconTabs3D
+              tabs={categoryGroupTabs}
+              defaultTab={selectedCategoryGroup}
+              activeTab={selectedCategoryGroup}
+              className="max-w-none"
+              onTabChange={(groupKey) => {
+                const selectedGroup = String(groupKey);
+                setSelectedCategoryGroup(selectedGroup);
+                setSelectedCategory(`group:${selectedGroup}`);
+              }}
+            />
             <p className="category-breadcrumb-path">
               <span>{CATEGORY_GROUPS.find((group) => group.key === selectedCategoryGroup)?.label || 'Food'}</span>
               <span>/</span>
@@ -434,7 +500,6 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
                   onClick={() => setSelectedCategory(option.key)}
                 >
                   <span>{option.label}</span>
-                  <small>{option.count}</small>
                 </button>
               ))}
             </div>
@@ -457,7 +522,7 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
             )}
           </section>
 
-        <CartSummary
+          <CartSummary
             cartItems={cartItems}
             totalAmount={totalAmount}
             onIncrement={handleIncrement}
@@ -467,6 +532,39 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
             orderMessage={orderState.message}
           />
         </div>
+
+        <button
+          type="button"
+          className={`mobile-cart-toggle ${mobileCartOpen ? 'hidden' : ''}`}
+          onClick={() => setMobileCartOpen(true)}
+        >
+          Cart ({cartItems.length})
+        </button>
+
+        {mobileCartOpen && (
+          <button
+            type="button"
+            className="mobile-cart-backdrop"
+            onClick={() => setMobileCartOpen(false)}
+            aria-label="Close cart panel"
+          />
+        )}
+
+        <section className={`mobile-cart-sheet ${mobileCartOpen ? 'open' : ''}`}>
+          <div className="mobile-cart-sheet-head">
+            <strong>Your Cart</strong>
+            <button type="button" onClick={() => setMobileCartOpen(false)}>Close</button>
+          </div>
+          <CartSummary
+            cartItems={cartItems}
+            totalAmount={totalAmount}
+            onIncrement={handleIncrement}
+            onDecrement={handleDecrement}
+            onPlaceOrder={placeOrder}
+            orderSubmitting={orderState.submitting}
+            orderMessage={orderState.message}
+          />
+        </section>
       </div>
 
       <DishDetailsModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
@@ -476,7 +574,13 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
 
 function AdminConsole({ apiBaseUrl }) {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ username: '', password: '', tenantId: '' });
+  const [registerForm, setRegisterForm] = useState({
+    username: '',
+    password: '',
+    tenantId: '',
+    backgroundVideoUrl: '',
+    backgroundImageUrl: ''
+  });
   const [auth, setAuth] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('admin_auth') || 'null');
@@ -501,10 +605,6 @@ function AdminConsole({ apiBaseUrl }) {
   const [qrHistoryRecords, setQrHistoryRecords] = useState([]);
   const [showQrHistory, setShowQrHistory] = useState(false);
   const [statsRange, setStatsRange] = useState('week');
-  const [forecastTab, setForecastTab] = useState('sales');
-  const [forecastModel, setForecastModel] = useState('xgboost');
-  const [forecastData, setForecastData] = useState(null);
-  const [forecastLoading, setForecastLoading] = useState(false);
 
   const authHeaders = auth?.token ? { Authorization: `Bearer ${auth.token}` } : {};
   const statusOptions = ['PLACED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
@@ -563,31 +663,14 @@ function AdminConsole({ apiBaseUrl }) {
     }
   };
 
-  const fetchForecast = async () => {
-    if (!auth?.token) return;
-    setForecastLoading(true);
-    try {
-      const response = await axios.get(
-        `${apiBaseUrl}/api/admin/orders/insights/forecast?lookbackDays=28&horizonDays=7&engine=ml&model=${encodeURIComponent(forecastModel)}`,
-        { headers: authHeaders }
-      );
-      setForecastData(response.data || null);
-    } catch (error) {
-      setAuthError(getApiErrorMessage(error, 'Unable to load forecast.'));
-    } finally {
-      setForecastLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!auth?.token) return;
     fetchOrders(tableFilter);
     fetchQrRecords();
     fetchQrHistoryRecords();
-    fetchForecast();
     const timer = setInterval(() => fetchOrders(tableFilter), 15000);
     return () => clearInterval(timer);
-  }, [auth?.token, tableFilter, forecastModel]);
+  }, [auth?.token, tableFilter]);
 
   const login = async (event) => {
     event.preventDefault();
@@ -609,7 +692,13 @@ function AdminConsole({ apiBaseUrl }) {
       const response = await axios.post(`${apiBaseUrl}/api/auth/register-admin`, registerForm);
       setAuth(response.data);
       localStorage.setItem('admin_auth', JSON.stringify(response.data));
-      setRegisterForm({ username: '', password: '', tenantId: '' });
+      setRegisterForm({
+        username: '',
+        password: '',
+        tenantId: '',
+        backgroundVideoUrl: '',
+        backgroundImageUrl: ''
+      });
     } catch (error) {
       setAuthError(error?.response?.data?.message || 'Registration failed.');
     }
@@ -894,6 +983,8 @@ function AdminConsole({ apiBaseUrl }) {
               <input type="text" placeholder="Restaurant Tenant ID" value={registerForm.tenantId} onChange={(event) => setRegisterForm((prev) => ({ ...prev, tenantId: event.target.value }))} required />
               <input type="text" placeholder="Username" value={registerForm.username} onChange={(event) => setRegisterForm((prev) => ({ ...prev, username: event.target.value }))} required />
               <input type="password" placeholder="Password (min 8 chars)" value={registerForm.password} onChange={(event) => setRegisterForm((prev) => ({ ...prev, password: event.target.value }))} required minLength={8} />
+              <input type="url" placeholder="Background Video URL (optional)" value={registerForm.backgroundVideoUrl} onChange={(event) => setRegisterForm((prev) => ({ ...prev, backgroundVideoUrl: event.target.value }))} />
+              <input type="url" placeholder="Background Image URL (optional)" value={registerForm.backgroundImageUrl} onChange={(event) => setRegisterForm((prev) => ({ ...prev, backgroundImageUrl: event.target.value }))} />
               <button type="submit">Register + Login</button>
             </form>
           )}
@@ -936,9 +1027,6 @@ function AdminConsole({ apiBaseUrl }) {
         </button>
         <button type="button" className={activeSection === 'stats' ? 'active' : ''} onClick={() => setActiveSection('stats')}>
           Sales Statistics
-        </button>
-        <button type="button" className={activeSection === 'forecast' ? 'active' : ''} onClick={() => { setActiveSection('forecast'); fetchForecast(); }}>
-          Forecasting
         </button>
       </section>
 
@@ -1131,90 +1219,6 @@ function AdminConsole({ apiBaseUrl }) {
         </>
       )}
 
-      {activeSection === 'forecast' && (
-        <>
-          <section className="admin-forecast-tabs">
-            <button type="button" className={forecastTab === 'sales' ? 'active' : ''} onClick={() => setForecastTab('sales')}>
-              Sales Forecast
-            </button>
-            <button type="button" className={forecastTab === 'inventory' ? 'active' : ''} onClick={() => setForecastTab('inventory')}>
-              Inventory Forecast
-            </button>
-            <button type="button" onClick={fetchForecast}>Refresh Forecast</button>
-          </section>
-          <section className="admin-forecast-models">
-            <button type="button" className={forecastModel === 'xgboost' ? 'active' : ''} onClick={() => setForecastModel('xgboost')}>
-              XGBoost
-            </button>
-            <button type="button" className={forecastModel === 'lstm' ? 'active' : ''} onClick={() => setForecastModel('lstm')}>
-              LSTM
-            </button>
-            <button type="button" className={forecastModel === 'random_forest' ? 'active' : ''} onClick={() => setForecastModel('random_forest')}>
-              Random Forest
-            </button>
-          </section>
-
-          {forecastLoading ? (
-            <div className="admin-loading">Loading forecast...</div>
-          ) : !forecastData ? (
-            <div className="admin-empty">No forecast data available.</div>
-          ) : forecastTab === 'sales' ? (
-            <>
-              <section className="admin-kpi-grid">
-                <article className="admin-kpi-card"><p>Predicted Orders (7d)</p><strong>{forecastData.predictedOrders ?? 0}</strong></article>
-                <article className="admin-kpi-card"><p>Predicted Revenue (7d)</p><strong>${Number(forecastData.predictedRevenue || 0).toFixed(2)}</strong></article>
-                <article className="admin-kpi-card"><p>Trend Factor</p><strong>{Number(forecastData.trendFactor || 1).toFixed(2)}x</strong></article>
-                <article className="admin-kpi-card"><p>Lookback Days</p><strong>{forecastData.lookbackDays ?? 0}</strong></article>
-                <article className="admin-kpi-card"><p>Engine</p><strong>{forecastData.engineUsed || 'heuristic'}</strong></article>
-                <article className="admin-kpi-card"><p>Model</p><strong>{forecastData.modelUsed || 'trend_baseline'}</strong></article>
-              </section>
-              {forecastData.notes && <p className="admin-stat-footnote">{forecastData.notes}</p>}
-              <section className="admin-top-dishes-card">
-                <header><h3>Top Predicted Demand (7 Days)</h3></header>
-                {!Array.isArray(forecastData.itemForecasts) || forecastData.itemForecasts.length === 0 ? (
-                  <p>No item-level forecast available.</p>
-                ) : (
-                  <ul>
-                    {forecastData.itemForecasts.slice(0, 8).map((item) => (
-                      <li key={`${item.dishId || item.dishName}-sales`}>
-                        <span>{item.dishName}</span>
-                        <strong>{item.predictedDemand}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            </>
-          ) : (
-            <section className="admin-forecast-table-wrap">
-              <table className="admin-forecast-table">
-                <thead>
-                  <tr>
-                    <th>Dish</th>
-                    <th>Category</th>
-                    <th>Avg/Day</th>
-                    <th>Predicted</th>
-                    <th>Par Stock</th>
-                    <th>Recommendation</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(forecastData.itemForecasts || []).slice(0, 20).map((item) => (
-                    <tr key={`${item.dishId || item.dishName}-inv`}>
-                      <td>{item.dishName}</td>
-                      <td>{item.category || '-'}</td>
-                      <td>{Number(item.avgDailyDemand || 0).toFixed(2)}</td>
-                      <td>{item.predictedDemand}</td>
-                      <td>{item.recommendedParStock}</td>
-                      <td>{item.recommendation}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
-        </>
-      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 package com.digital.menu.service;
 
-import com.digital.menu.dto.DemandForecastResponse;
 import com.digital.menu.dto.TableStateSummary;
 import com.digital.menu.model.OrderItem;
 import com.digital.menu.model.RestaurantOrder;
@@ -14,6 +13,4 @@ public interface OrderServicePort {
     RestaurantOrder updateStatus(String tenantId, String orderId, String status, String actor);
     RestaurantOrder updateItemStatus(String tenantId, String orderId, String dishId, String status, String actor);
     List<TableStateSummary> getTableStateSummary(String tenantId);
-    DemandForecastResponse getDemandForecast(String tenantId, int lookbackDays, int horizonDays);
-    DemandForecastResponse getDemandForecast(String tenantId, int lookbackDays, int horizonDays, String engine, String model);
 }

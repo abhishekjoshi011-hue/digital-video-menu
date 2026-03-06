@@ -40,20 +40,6 @@ services:
     networks:
       - restaurant-network
 
-  mongo-express:
-    image: mongo-express:1.0.0-20
-    container_name: mongo_express_container
-    restart: always
-    ports:
-      - "8081:8081"
-    environment:
-      ME_CONFIG_MONGODB_SERVER: mongodb
-      ME_CONFIG_MONGODB_PORT: 27017
-    depends_on:
-      - mongodb
-    networks:
-      - restaurant-network
-
 volumes:
   mongo-data:
 
