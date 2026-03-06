@@ -18,9 +18,6 @@ public class QrTokenService {
     @Value("${app.qr.secret:}")
     private String qrSecret;
 
-    @Value("${app.qr.expiration-seconds:2592000}")
-    private long expirationSeconds;
-
     @PostConstruct
     public void validateSecret() {
         if (qrSecret == null || qrSecret.isBlank()) {
@@ -49,7 +46,6 @@ public class QrTokenService {
             .setSubject("qr-order-session")
             .addClaims(Map.of("tenantId", tenantId, "tableNumber", tableNumber))
             .setIssuedAt(Date.from(now))
-            .setExpiration(Date.from(now.plusSeconds(expirationSeconds)))
             .signWith(getSigningKey(), SignatureAlgorithm.HS256)
             .compact();
     }

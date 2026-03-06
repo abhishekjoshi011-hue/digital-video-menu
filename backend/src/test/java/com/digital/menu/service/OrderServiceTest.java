@@ -36,11 +36,14 @@ class OrderServiceTest {
     @Mock
     private OrderStreamService orderStreamService;
 
+    @Mock
+    private ForecastMlClient forecastMlClient;
+
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(orderRepository, dishRepository, orderStreamService);
+        orderService = new OrderService(orderRepository, dishRepository, orderStreamService, forecastMlClient);
         ReflectionTestUtils.setField(orderService, "slaMinutes", 20L);
     }
 

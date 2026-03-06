@@ -27,46 +27,66 @@ const MenuList = ({ items, onAddToCart, onOpenDishDetails }) => {
     <div className="menu-list">
       {items.map((dish) => {
         const normalizedType = normalizeDishType(dish.type, dish);
+        const videoSrc = dish.videoUrl || dish.video;
+        const imageSrc = dish.image || dish.imageUrl;
+        const hasMedia = Boolean(videoSrc || imageSrc);
 
         return (
-          <div key={dish.id || dish.name} className="dish-card">
-            <div className="dish-media-container">
-              <button
-                type="button"
-                className="dish-image-btn"
-                onClick={() => onOpenDishDetails?.(dish)}
-              >
-                <img 
-                  src={dish.image || dish.imageUrl}
-                  alt={dish.name} 
-                  className="dish-image"
-                />
-              </button>
-            </div>
+          <div key={dish.id || dish.name} className={`dish-card ${hasMedia ? 'has-media' : ''}`}>
+            {hasMedia && (
+              <div className="dish-card-bg" aria-hidden="true">
+                {videoSrc ? (
+                  <video
+                    src={videoSrc}
+                    className="dish-card-bg-media"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    poster={imageSrc || undefined}
+                  />
+                ) : (
+                  <img
+                    src={imageSrc}
+                    alt=""
+                    className="dish-card-bg-media"
+                  />
+                )}
+              </div>
+            )}
 
+            <div className="dish-card-content">
             <div className="dish-meta">
-              <span className={`type-pill ${normalizedType || "non-veg"}`}>
-                {normalizedType === 'veg' ? 'Veg' : 'Non-Veg'}
+              <span
+                className={`type-pill ${normalizedType || "non-veg"}`}
+                aria-label={normalizedType === 'veg' ? 'Vegetarian dish' : 'Non-vegetarian dish'}
+                title={normalizedType === 'veg' ? 'Veg' : 'Non-Veg'}
+              >
+                <span className="type-marker" aria-hidden="true" />
               </span>
               {dish.category && <span className="category-pill">{dish.category}</span>}
             </div>
 
-            <h3>
-              <button
-                type="button"
-                className="dish-name-btn"
-                onClick={() => onOpenDishDetails?.(dish)}
-              >
-                {dish.name}
-              </button>
-            </h3>
-            <p>{dish.description || "Freshly prepared and served hot."}</p>
+              <div className="dish-copy">
+                <h3>
+                  <button
+                    type="button"
+                    className="dish-name-btn"
+                    onClick={() => onOpenDishDetails?.(dish)}
+                  >
+                    {dish.name}
+                  </button>
+                </h3>
+                <p>{dish.description || "Freshly prepared and served hot."}</p>
+              </div>
 
-            <div className="dish-footer">
-              <strong>${Number(dish.price || 0).toFixed(2)}</strong>
-              <button onClick={() => onAddToCart(dish)} className="add-btn">
-                Add to Cart
-              </button>
+              <div className="dish-footer">
+                <strong>${Number(dish.price || 0).toFixed(2)}</strong>
+                <button onClick={() => onAddToCart(dish)} className="add-btn">
+                  Add to Cart
+                </button>
+              </div>
             </div>
           </div>
         );

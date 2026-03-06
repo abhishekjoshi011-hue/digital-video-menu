@@ -1,6 +1,7 @@
 package com.digital.menu.service;
 
 import com.digital.menu.dto.QrTokenResponse;
+import com.digital.menu.errors.ErrorMessages;
 import com.digital.menu.model.TableQrCode;
 import com.digital.menu.repository.TableQrCodeRepository;
 import com.digital.menu.security.QrTokenService;
@@ -10,44 +11,50 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
-public class TableQrService {
+public class TableQrService implements TableQrServicePort {
     private final TableQrCodeRepository tableQrCodeRepository;
     private final QrTokenService qrTokenService;
 
     @Value("${app.public-menu-base-url:http://localhost:3000}")
     private String publicMenuBaseUrl;
 
-    @Value("${app.qr.expiration-seconds:2592000}")
-    private long expirationSeconds;
-
     public TableQrService(TableQrCodeRepository tableQrCodeRepository, QrTokenService qrTokenService) {
         this.tableQrCodeRepository = tableQrCodeRepository;
         this.qrTokenService = qrTokenService;
     }
 
+    @Override
+    public QrTokenResponse createForTable(String tenantId, Integer tableNumber) {
+        if (tableNumber == null || tableNumber <= 0) {
+            throw new IllegalArgumentException(ErrorMessages.INVALID_TABLE_NUMBER);
+        }
+        TableQrCode existing = tableQrCodeRepository.findByTenantIdAndTableNumberAndActiveTrue(tenantId, tableNumber)
+            .orElse(null);
+        if (existing != null) {
+            throw new IllegalArgumentException(String.format(ErrorMessages.QR_ALREADY_EXISTS_TEMPLATE, tableNumber));
+        }
+        return generateNew(tenantId, tableNumber);
+    }
+
+    @Override
     public QrTokenResponse getOrCreateForTable(String tenantId, Integer tableNumber) {
         if (tableNumber == null || tableNumber <= 0) {
-            throw new IllegalArgumentException("tableNumber must be greater than 0");
+            throw new IllegalArgumentException(ErrorMessages.INVALID_TABLE_NUMBER);
         }
 
         TableQrCode existing = tableQrCodeRepository.findByTenantIdAndTableNumberAndActiveTrue(tenantId, tableNumber)
             .orElse(null);
-        if (existing != null && !isExpired(existing)) {
-            return toResponse(existing);
-        }
-
         if (existing != null) {
-            existing.setActive(false);
-            existing.setUpdatedAt(Instant.now());
-            tableQrCodeRepository.save(existing);
+            return toResponse(existing);
         }
 
         return generateNew(tenantId, tableNumber);
     }
 
+    @Override
     public QrTokenResponse regenerateForTable(String tenantId, Integer tableNumber) {
         if (tableNumber == null || tableNumber <= 0) {
-            throw new IllegalArgumentException("tableNumber must be greater than 0");
+            throw new IllegalArgumentException(ErrorMessages.INVALID_TABLE_NUMBER);
         }
 
         tableQrCodeRepository.findByTenantIdAndTableNumberAndActiveTrue(tenantId, tableNumber).ifPresent(existing -> {
@@ -59,33 +66,39 @@ public class TableQrService {
         return generateNew(tenantId, tableNumber);
     }
 
+    @Override
     public void revokeForTable(String tenantId, Integer tableNumber) {
         TableQrCode existing = tableQrCodeRepository.findByTenantIdAndTableNumberAndActiveTrue(tenantId, tableNumber)
-            .orElseThrow(() -> new IllegalArgumentException("Active QR not found for this table"));
+            .orElseThrow(() -> new IllegalArgumentException(ErrorMessages.ACTIVE_QR_NOT_FOUND));
         existing.setActive(false);
         existing.setUpdatedAt(Instant.now());
         tableQrCodeRepository.save(existing);
     }
 
+    @Override
     public List<QrTokenResponse> listForTenant(String tenantId) {
-        return tableQrCodeRepository.findByTenantIdOrderByTableNumberAsc(tenantId)
+        return tableQrCodeRepository.findByTenantIdAndActiveTrueOrderByTableNumberAsc(tenantId)
             .stream()
             .map(this::toResponse)
             .toList();
     }
 
+    @Override
+    public List<QrTokenResponse> listHistoryForTenant(String tenantId, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+        List<TableQrCode> sorted = tableQrCodeRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId);
+        if (sorted.size() > safeLimit) {
+            sorted = sorted.subList(0, safeLimit);
+        }
+        return sorted.stream().map(this::toResponse).toList();
+    }
+
+    @Override
     public QrTokenService.QrContext validatePublicQrToken(String token) {
         QrTokenService.QrContext context = qrTokenService.parseToken(token);
         TableQrCode qrCode = tableQrCodeRepository
             .findByTenantIdAndTableNumberAndTokenAndActiveTrue(context.tenantId(), context.tableNumber(), token)
             .orElseThrow(() -> new IllegalArgumentException("QR token is invalid or revoked"));
-
-        if (isExpired(qrCode)) {
-            qrCode.setActive(false);
-            qrCode.setUpdatedAt(Instant.now());
-            tableQrCodeRepository.save(qrCode);
-            throw new IllegalArgumentException("QR token expired");
-        }
 
         return context;
     }
@@ -101,12 +114,7 @@ public class TableQrService {
         qrCode.setActive(true);
         qrCode.setCreatedAt(now);
         qrCode.setUpdatedAt(now);
-        qrCode.setExpiresAt(now.plusSeconds(expirationSeconds));
         return toResponse(tableQrCodeRepository.save(qrCode));
-    }
-
-    private boolean isExpired(TableQrCode qrCode) {
-        return qrCode.getExpiresAt() != null && qrCode.getExpiresAt().isBefore(Instant.now());
     }
 
     private QrTokenResponse toResponse(TableQrCode qrCode) {
@@ -117,8 +125,7 @@ public class TableQrService {
             qrCode.getTableNumber(),
             qrCode.isActive(),
             qrCode.getCreatedAt(),
-            qrCode.getUpdatedAt(),
-            qrCode.getExpiresAt()
+            qrCode.getUpdatedAt()
         );
     }
 }

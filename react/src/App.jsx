@@ -25,26 +25,6 @@ const normalizeDishType = (type, dish = null) => {
   return 'non-veg';
 };
 
-const DISH_KIND_RULES = [
-  { label: 'Noodles', terms: ['noodle', 'ramen', 'chow mein', 'spaghetti', 'pasta'] },
-  { label: 'Dumplings', terms: ['dumpling', 'momo', 'gyoza', 'wonton'] },
-  { label: 'Rice', terms: ['rice', 'biryani', 'risotto', 'fried rice'] },
-  { label: 'Breads', terms: ['bread', 'naan', 'roti', 'kulcha', 'bun', 'baguette'] },
-  { label: 'Grill', terms: ['grill', 'grilled', 'bbq', 'kebab', 'tandoori'] },
-  { label: 'Curries', terms: ['curry', 'masala', 'korma', 'gravy'] },
-  { label: 'Bowls', terms: ['bowl'] },
-  { label: 'Burgers', terms: ['burger', 'slider'] },
-  { label: 'Pizzas', terms: ['pizza'] },
-  { label: 'Desserts', terms: ['dessert', 'cake', 'brownie', 'ice cream', 'sweet'] },
-  { label: 'Beverages', terms: ['beverage', 'drink', 'coffee', 'tea', 'juice', 'soda', 'mocktail'] }
-];
-
-const getDishKind = (item) => {
-  const haystack = `${item?.name || ''} ${item?.description || ''} ${item?.category || ''}`.toLowerCase();
-  const match = DISH_KIND_RULES.find((rule) => rule.terms.some((term) => haystack.includes(term)));
-  return match?.label || 'Chef Specials';
-};
-
 const mapCartToOrderItems = (items) =>
   items.map((item) => ({
     dishId: item.id,
@@ -53,6 +33,33 @@ const mapCartToOrderItems = (items) =>
     unitPrice: Number(item.price || 0),
     selectedAddOns: []
   }));
+
+const normalizeCategoryKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const CATEGORY_GROUPS = [
+  { key: 'food', label: 'Food' },
+  { key: 'beverages', label: 'Beverages' },
+  { key: 'desserts', label: 'Desserts' }
+];
+
+const getCategoryGroupKey = (categoryLabel) => {
+  const value = normalizeCategoryKey(categoryLabel);
+  if (
+    value.includes('beverage') ||
+    value.includes('drink') ||
+    value.includes('tea') ||
+    value.includes('mocktail')
+  ) {
+    return 'beverages';
+  }
+  if (
+    value.includes('dessert') ||
+    value.includes('sweet') ||
+    value.includes('ice cream')
+  ) {
+    return 'desserts';
+  }
+  return 'food';
+};
 
 function App() {
   const [adminView, setAdminView] = useState(window.location.hash === '#/admin');
@@ -80,9 +87,9 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
 
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategoryGroup, setSelectedCategoryGroup] = useState('food');
+  const [selectedCategory, setSelectedCategory] = useState('group:food');
   const [selectedType, setSelectedType] = useState('all');
-  const [selectedDishKind, setSelectedDishKind] = useState('All dishes');
   const [searchTerm, setSearchTerm] = useState('');
   const [showStory, setShowStory] = useState(false);
   const [cartItems, setCartItems] = useState([]);
@@ -268,36 +275,70 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
     };
   }, [apiBaseUrl, queueStorageKey]);
 
-  const baseCategories = ['All', 'Starters', 'Main Course', 'Desserts', 'Beverages'];
-  const categories = [
-    ...new Set([
-      ...baseCategories,
-      ...menuItems.map((item) => item.category).filter((c) => c)
-    ])
-  ];
+  const groupedCategoryOptions = useMemo(() => {
+    const grouped = {
+      food: [],
+      beverages: [],
+      desserts: []
+    };
+    const groupCounts = {
+      food: 0,
+      beverages: 0,
+      desserts: 0
+    };
 
-  const dishKindCounts = menuItems.reduce((acc, item) => {
-    const kind = getDishKind(item);
-    acc[kind] = (acc[kind] || 0) + 1;
-    return acc;
-  }, {});
+    const countsByCategory = new Map();
+    const labelsByCategory = new Map();
 
-  const dishKindOptions = [
-    { label: 'All dishes', count: menuItems.length },
-    ...DISH_KIND_RULES.map((rule) => ({
-      label: rule.label,
-      count: dishKindCounts[rule.label] || 0
-    })),
-    { label: 'Chef Specials', count: dishKindCounts['Chef Specials'] || 0 }
-  ];
+    menuItems.forEach((item) => {
+      const label = String(item?.category || 'Uncategorized').trim() || 'Uncategorized';
+      const key = normalizeCategoryKey(label);
+      labelsByCategory.set(key, label);
+      countsByCategory.set(key, (countsByCategory.get(key) || 0) + 1);
+    });
+
+    Array.from(countsByCategory.entries())
+      .map(([key, count]) => ({ key, label: labelsByCategory.get(key) || key, count }))
+      .forEach((category) => {
+        const group = getCategoryGroupKey(category.label);
+        grouped[group].push(category);
+        groupCounts[group] += category.count;
+      });
+
+    Object.values(grouped).forEach((list) => list.sort((a, b) => a.label.localeCompare(b.label)));
+
+    return { grouped, groupCounts };
+  }, [menuItems]);
+
+  const activeCategoryOptions = useMemo(() => {
+    const groupLabel = CATEGORY_GROUPS.find((group) => group.key === selectedCategoryGroup)?.label || 'Food';
+    return [
+      {
+        key: `group:${selectedCategoryGroup}`,
+        label: `All ${groupLabel}`,
+        count: groupedCategoryOptions.groupCounts[selectedCategoryGroup] || 0
+      },
+      ...(groupedCategoryOptions.grouped[selectedCategoryGroup] || [])
+    ];
+  }, [groupedCategoryOptions, selectedCategoryGroup]);
+
+  const selectedCategoryLabel = useMemo(() => {
+    if (selectedCategory.startsWith('group:')) {
+      return 'All';
+    }
+    return activeCategoryOptions.find((option) => option.key === selectedCategory)?.label || 'All';
+  }, [activeCategoryOptions, selectedCategory]);
 
   const filteredItems = menuItems.filter((item) => {
-    const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+    const itemCategory = normalizeCategoryKey(item?.category || 'Uncategorized');
+    const itemGroup = getCategoryGroupKey(item?.category || 'Uncategorized');
+    const matchesCategory = selectedCategory.startsWith('group:')
+      ? itemGroup === selectedCategory.replace('group:', '')
+      : itemCategory === selectedCategory;
     const itemType = normalizeDishType(item.type, item);
     const matchesType = selectedType === 'all' || itemType === selectedType;
-    const matchesDishKind = selectedDishKind === 'All dishes' || getDishKind(item) === selectedDishKind;
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesType && matchesDishKind && matchesSearch;
+    return matchesCategory && matchesType && matchesSearch;
   });
   const featuredItems = useMemo(
     () => menuItems.filter((item) => item?.image || item?.imageUrl).slice(0, 3),
@@ -311,19 +352,6 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
       <div className="menu-page">
         <section className="top-stage">
           <MenuHeader backgroundVideoUrl={backgroundVideoUrl} />
-          <aside className="brand-story" aria-label="Restaurant story">
-            <p className="story-kicker">House Signature</p>
-            <h2>Timeless Craft, Modern Table</h2>
-            <p>
-              Seasonal ingredients, precise plating, and elevated service. Browse the collection and compose your
-              perfect course.
-            </p>
-            <div className="story-tags">
-              <span>Chef Curated</span>
-              <span>Fresh Daily</span>
-              <span>Table Service</span>
-            </div>
-          </aside>
         </section>
 
         <section className="menu-quick-actions" aria-label="Quick actions">
@@ -370,23 +398,40 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
         <MenuFilters
           searchTerm={searchTerm}
           onSearch={setSearchTerm}
-          categories={categories}
-          selectedCategory={selectedCategory}
-          onCategoryChange={setSelectedCategory}
           selectedType={selectedType}
           onTypeChange={setSelectedType}
         />
 
         <div className="content-layout">
           <aside className="dish-kind-panel">
-            <h3>Popular Types</h3>
-            <div className="dish-kind-list">
-              {dishKindOptions.map((option) => (
+            <h3>Categories</h3>
+            <div className="category-breadcrumb-groups" role="tablist" aria-label="Category groups">
+              {CATEGORY_GROUPS.map((group) => (
                 <button
-                  key={option.label}
+                  key={group.key}
                   type="button"
-                  className={`dish-kind-btn ${selectedDishKind === option.label ? 'active' : ''}`}
-                  onClick={() => setSelectedDishKind(option.label)}
+                  className={selectedCategoryGroup === group.key ? 'active' : ''}
+                  onClick={() => {
+                    setSelectedCategoryGroup(group.key);
+                    setSelectedCategory(`group:${group.key}`);
+                  }}
+                >
+                  {group.label}
+                </button>
+              ))}
+            </div>
+            <p className="category-breadcrumb-path">
+              <span>{CATEGORY_GROUPS.find((group) => group.key === selectedCategoryGroup)?.label || 'Food'}</span>
+              <span>/</span>
+              <strong>{selectedCategoryLabel}</strong>
+            </p>
+            <div className="dish-kind-list">
+              {activeCategoryOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className={`dish-kind-btn ${selectedCategory === option.key ? 'active' : ''}`}
+                  onClick={() => setSelectedCategory(option.key)}
                 >
                   <span>{option.label}</span>
                   <small>{option.count}</small>
@@ -398,9 +443,6 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
           <section className="menu-content" id="menu-selection">
             <div className="menu-content-header">
               <h2>Menu Selection</h2>
-              <p>
-                Showing <strong>{filteredItems.length}</strong> of <strong>{menuItems.length}</strong> dishes
-              </p>
             </div>
             {loading ? (
               <div className="loading-state">
@@ -426,8 +468,6 @@ function CustomerMenu({ apiBaseUrl, defaultTenantId }) {
           />
         </div>
       </div>
-
-      <a className="floating-skip-menu" href="#menu-selection">Menu</a>
 
       <DishDetailsModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
     </div>
@@ -458,6 +498,13 @@ function AdminConsole({ apiBaseUrl }) {
   const [qrToken, setQrToken] = useState('');
   const [qrMessage, setQrMessage] = useState('');
   const [qrRecords, setQrRecords] = useState([]);
+  const [qrHistoryRecords, setQrHistoryRecords] = useState([]);
+  const [showQrHistory, setShowQrHistory] = useState(false);
+  const [statsRange, setStatsRange] = useState('week');
+  const [forecastTab, setForecastTab] = useState('sales');
+  const [forecastModel, setForecastModel] = useState('xgboost');
+  const [forecastData, setForecastData] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
 
   const authHeaders = auth?.token ? { Authorization: `Bearer ${auth.token}` } : {};
   const statusOptions = ['PLACED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
@@ -506,13 +553,41 @@ function AdminConsole({ apiBaseUrl }) {
     }
   };
 
+  const fetchQrHistoryRecords = async () => {
+    if (!auth?.token) return;
+    try {
+      const response = await axios.get(`${apiBaseUrl}/api/admin/qr/tables/history?limit=120`, { headers: authHeaders });
+      setQrHistoryRecords(response.data || []);
+    } catch (error) {
+      setQrMessage(getApiErrorMessage(error, 'Unable to load QR history.'));
+    }
+  };
+
+  const fetchForecast = async () => {
+    if (!auth?.token) return;
+    setForecastLoading(true);
+    try {
+      const response = await axios.get(
+        `${apiBaseUrl}/api/admin/orders/insights/forecast?lookbackDays=28&horizonDays=7&engine=ml&model=${encodeURIComponent(forecastModel)}`,
+        { headers: authHeaders }
+      );
+      setForecastData(response.data || null);
+    } catch (error) {
+      setAuthError(getApiErrorMessage(error, 'Unable to load forecast.'));
+    } finally {
+      setForecastLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!auth?.token) return;
     fetchOrders(tableFilter);
     fetchQrRecords();
+    fetchQrHistoryRecords();
+    fetchForecast();
     const timer = setInterval(() => fetchOrders(tableFilter), 15000);
     return () => clearInterval(timer);
-  }, [auth?.token, tableFilter]);
+  }, [auth?.token, tableFilter, forecastModel]);
 
   const login = async (event) => {
     event.preventDefault();
@@ -551,6 +626,8 @@ function AdminConsole({ apiBaseUrl }) {
     setQrToken('');
     setQrMessage('');
     setQrRecords([]);
+    setQrHistoryRecords([]);
+    setShowQrHistory(false);
     setActiveSection('orders');
   };
 
@@ -581,6 +658,7 @@ function AdminConsole({ apiBaseUrl }) {
       setQrToken(response.data?.token || '');
       setQrMessage(`QR URL ready for table ${parsed}.`);
       fetchQrRecords();
+      fetchQrHistoryRecords();
     } catch (error) {
       setQrMessage(getApiErrorMessage(error, 'Unable to generate QR URL'));
     }
@@ -599,6 +677,7 @@ function AdminConsole({ apiBaseUrl }) {
       setQrToken(response.data?.token || '');
       setQrMessage(`QR URL regenerated for table ${parsed}.`);
       fetchQrRecords();
+      fetchQrHistoryRecords();
     } catch (error) {
       setQrMessage(getApiErrorMessage(error, 'Unable to regenerate QR URL'));
     }
@@ -615,6 +694,7 @@ function AdminConsole({ apiBaseUrl }) {
         setQrToken('');
       }
       fetchQrRecords();
+      fetchQrHistoryRecords();
     } catch (error) {
       setQrMessage(getApiErrorMessage(error, 'Unable to remove QR'));
     }
@@ -629,6 +709,14 @@ function AdminConsole({ apiBaseUrl }) {
       setQrMessage('Copy failed. Please copy manually.');
     }
   };
+
+  const filteredQrHistory = useMemo(() => {
+    const selected = Number(qrTableNumber);
+    if (!Number.isInteger(selected) || selected <= 0) {
+      return qrHistoryRecords;
+    }
+    return qrHistoryRecords.filter((row) => Number(row.tableNumber) === selected);
+  }, [qrHistoryRecords, qrTableNumber]);
 
   const filteredOrders = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
@@ -645,11 +733,31 @@ function AdminConsole({ apiBaseUrl }) {
     });
   }, [orders, statusFilter, orderSearch]);
 
+  const statsOrders = useMemo(() => {
+    const now = new Date();
+    const from = new Date(now);
+    if (statsRange === 'week') {
+      from.setHours(0, 0, 0, 0);
+      from.setDate(from.getDate() - 6);
+    } else if (statsRange === 'month') {
+      from.setDate(1);
+      from.setHours(0, 0, 0, 0);
+    } else {
+      from.setMonth(0, 1);
+      from.setHours(0, 0, 0, 0);
+    }
+    return (orders || []).filter((order) => {
+      if (!order?.createdAt || order?.status === 'CANCELLED') return false;
+      const placedAt = new Date(order.createdAt);
+      return placedAt >= from && placedAt <= now;
+    });
+  }, [orders, statsRange]);
+
   const summary = useMemo(() => {
     const base = { PLACED: 0, PREPARING: 0, READY: 0, SERVED: 0, CANCELLED: 0 };
     let revenue = 0;
     const activeTables = new Set();
-    (orders || []).forEach((order) => {
+    (statsOrders || []).forEach((order) => {
       const status = order?.status;
       if (base[status] != null) base[status] += 1;
       if (order?.tableNumber != null && status !== 'SERVED' && status !== 'CANCELLED') {
@@ -661,63 +769,92 @@ function AdminConsole({ apiBaseUrl }) {
     });
     return {
       ...base,
-      totalOrders: (orders || []).length,
+      totalOrders: (statsOrders || []).length,
       activeTables: activeTables.size,
       revenue
     };
-  }, [orders]);
+  }, [statsOrders]);
 
-  const todaysSalesByHour = useMemo(() => {
-    const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, amount: 0 }));
+  const salesSeries = useMemo(() => {
     const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const d = now.getDate();
+    let buckets = [];
 
-    (orders || []).forEach((order) => {
-      if (!order?.createdAt || order?.status === 'CANCELLED') return;
-      const placedAt = new Date(order.createdAt);
-      if (placedAt.getFullYear() !== y || placedAt.getMonth() !== m || placedAt.getDate() !== d) return;
+    if (statsRange === 'year') {
+      buckets = Array.from({ length: 12 }, (_, i) => ({
+        key: i,
+        label: new Date(now.getFullYear(), i, 1).toLocaleString(undefined, { month: 'short' }),
+        amount: 0
+      }));
+      statsOrders.forEach((order) => {
+        const placedAt = new Date(order.createdAt);
+        if (placedAt.getFullYear() !== now.getFullYear()) return;
+        const total = (order.items || []).reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
+        buckets[placedAt.getMonth()].amount += total;
+      });
+      return buckets;
+    }
 
-      const lineTotal = (order.items || []).reduce(
-        (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
-        0
-      );
-      hours[placedAt.getHours()].amount += lineTotal;
+    if (statsRange === 'month') {
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      buckets = Array.from({ length: daysInMonth }, (_, i) => ({
+        key: i + 1,
+        label: String(i + 1),
+        amount: 0
+      }));
+      statsOrders.forEach((order) => {
+        const placedAt = new Date(order.createdAt);
+        if (placedAt.getFullYear() !== now.getFullYear() || placedAt.getMonth() !== now.getMonth()) return;
+        const total = (order.items || []).reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
+        buckets[placedAt.getDate() - 1].amount += total;
+      });
+      return buckets;
+    }
+
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 6);
+    buckets = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return {
+        key: d.toISOString().slice(0, 10),
+        label: d.toLocaleDateString(undefined, { weekday: 'short' }),
+        amount: 0
+      };
     });
-
-    return hours;
-  }, [orders]);
+    const byKey = new Map(buckets.map((b, i) => [b.key, i]));
+    statsOrders.forEach((order) => {
+      const placedAt = new Date(order.createdAt);
+      const key = placedAt.toISOString().slice(0, 10);
+      const idx = byKey.get(key);
+      if (idx == null) return;
+      const total = (order.items || []).reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
+      buckets[idx].amount += total;
+    });
+    return buckets;
+  }, [statsOrders, statsRange]);
 
   const salesLine = useMemo(() => {
     const width = 480;
     const height = 190;
     const paddingX = 18;
     const paddingY = 20;
-    const max = Math.max(...todaysSalesByHour.map((item) => item.amount), 1);
-    const stepX = (width - paddingX * 2) / 23;
+    const max = Math.max(...salesSeries.map((item) => item.amount), 1);
+    const stepX = (width - paddingX * 2) / Math.max(1, salesSeries.length - 1);
 
-    const points = todaysSalesByHour.map((item, idx) => {
+    const points = salesSeries.map((item, idx) => {
       const x = paddingX + idx * stepX;
       const y = height - paddingY - (item.amount / max) * (height - paddingY * 2);
       return `${x},${y}`;
     }).join(' ');
 
     return { width, height, paddingX, paddingY, points };
-  }, [todaysSalesByHour]);
+  }, [salesSeries]);
 
-  const todaysTopDishes = useMemo(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const d = now.getDate();
+  const topDishesForRange = useMemo(() => {
     const totals = new Map();
 
-    (orders || []).forEach((order) => {
-      if (!order?.createdAt || order?.status === 'CANCELLED') return;
-      const placedAt = new Date(order.createdAt);
-      if (placedAt.getFullYear() !== y || placedAt.getMonth() !== m || placedAt.getDate() !== d) return;
-
+    (statsOrders || []).forEach((order) => {
       (order.items || []).forEach((item) => {
         const key = item.dishName || 'Unnamed Dish';
         const qty = Number(item.quantity || 0);
@@ -729,7 +866,7 @@ function AdminConsole({ apiBaseUrl }) {
       .map(([name, qty]) => ({ name, qty }))
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);
-  }, [orders]);
+  }, [statsOrders]);
 
   if (!auth?.token) {
     return (
@@ -777,9 +914,13 @@ function AdminConsole({ apiBaseUrl }) {
           <p className="admin-last-updated">Last sync: {lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString() : 'Not synced yet'}</p>
         </div>
         <div className="admin-topbar-actions">
-          <input type="number" min="1" placeholder="Filter table #" value={tableFilter} onChange={(event) => setTableFilter(event.target.value)} />
-          <button type="button" onClick={() => fetchOrders(tableFilter)}>Refresh</button>
-          <button type="button" onClick={() => { setTableFilter(''); fetchOrders(); }}>Reset</button>
+          {activeSection === 'orders' && (
+            <>
+              <input type="number" min="1" placeholder="Filter table #" value={tableFilter} onChange={(event) => setTableFilter(event.target.value)} />
+              <button type="button" onClick={() => fetchOrders(tableFilter)}>Refresh</button>
+              <button type="button" onClick={() => { setTableFilter(''); fetchOrders(); }}>Reset</button>
+            </>
+          )}
           <button type="button" onClick={logout}>Logout</button>
         </div>
       </div>
@@ -796,6 +937,9 @@ function AdminConsole({ apiBaseUrl }) {
         <button type="button" className={activeSection === 'stats' ? 'active' : ''} onClick={() => setActiveSection('stats')}>
           Sales Statistics
         </button>
+        <button type="button" className={activeSection === 'forecast' ? 'active' : ''} onClick={() => { setActiveSection('forecast'); fetchForecast(); }}>
+          Forecasting
+        </button>
       </section>
 
       {activeSection === 'orders' && (
@@ -805,7 +949,14 @@ function AdminConsole({ apiBaseUrl }) {
             <div className="admin-status-filter">
               <button type="button" className={statusFilter === 'ALL' ? 'active' : ''} onClick={() => setStatusFilter('ALL')}>ALL</button>
               {statusOptions.map((status) => (
-                <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => setStatusFilter(status)}>{status}</button>
+                <button
+                  key={status}
+                  type="button"
+                  className={statusFilter === status ? 'active' : ''}
+                  onClick={() => setStatusFilter(status)}
+                >
+                  {status}
+                </button>
               ))}
             </div>
             <button type="button" className="admin-clear-filters" onClick={() => { setStatusFilter('ALL'); setOrderSearch(''); }}>
@@ -822,25 +973,34 @@ function AdminConsole({ apiBaseUrl }) {
               {filteredOrders.map((order) => (
                 <article key={order.id} className="admin-order-card">
                   <header>
-                    <strong>Table {order.tableNumber}</strong>
-                    <span>{order.status}</span>
+                    <div className="admin-order-primary">
+                      <strong>Table {order.tableNumber}</strong>
+                      <ul className="admin-order-items">
+                        {(order.items || []).map((item, index) => (
+                          <li key={`${item.dishId || item.dishName}-${index}`}>
+                            <span className="qty">{item.quantity}x</span>
+                            <span className="name">{item.dishName}</span>
+                            <span className="price">${Number(item.unitPrice || 0).toFixed(2)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <span className="admin-order-status">{order.status}</span>
                   </header>
-                  <p>Order ID: {order.id}</p>
-                  <p>Placed: {order.createdAt ? new Date(order.createdAt).toLocaleString() : '-'}</p>
-                  <ul>
-                    {(order.items || []).map((item, index) => (
-                      <li key={`${item.dishId || item.dishName}-${index}`}>
-                        {item.quantity} x {item.dishName} (${Number(item.unitPrice || 0).toFixed(2)})
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="admin-order-time">Placed: {order.createdAt ? new Date(order.createdAt).toLocaleString() : '-'}</p>
                   <div className="admin-status-actions">
                     {['PLACED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'].map((status) => (
-                      <button key={status} type="button" className={order.status === status ? 'active' : ''} onClick={() => updateOrderStatus(order.id, status)}>
+                      <button
+                        key={status}
+                        type="button"
+                        className={order.status === status ? 'active' : ''}
+                        onClick={() => updateOrderStatus(order.id, status)}
+                      >
                         {status}
                       </button>
                     ))}
                   </div>
+                  <p className="admin-order-id">Order ID: {order.id}</p>
                 </article>
               ))}
             </section>
@@ -863,17 +1023,47 @@ function AdminConsole({ apiBaseUrl }) {
             {qrMessage && <p className="admin-qr-message">{qrMessage}</p>}
             {qrRecords.length > 0 && (
               <div className="admin-qr-table-list">
+                <p className="admin-qr-list-title">Active QR Codes</p>
                 {qrRecords.map((row) => (
                   <div key={`${row.tableNumber}-${row.updatedAt || row.createdAt}`} className={`admin-qr-row ${row.active ? '' : 'inactive'}`}>
                     <div className="admin-qr-row-main">
                       <strong>Table {row.tableNumber}</strong>
                       <span>{row.active ? 'Active' : 'Inactive'}</span>
-                      <small>Expires: {row.expiresAt ? new Date(row.expiresAt).toLocaleDateString() : '-'}</small>
+                      <small>Updated: {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '-'}</small>
                     </div>
                     <div className="admin-qr-row-actions">
                       <button type="button" onClick={() => copyText(row.menuUrl, `Table ${row.tableNumber} URL copied.`)} disabled={!row.active}>Copy</button>
                       <button type="button" onClick={() => setQrTableNumber(String(row.tableNumber))}>Select</button>
                       <button type="button" onClick={() => revokeTableQr(row.tableNumber)} disabled={!row.active}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {qrHistoryRecords.length > 0 && (
+              <div className="admin-qr-history-wrap">
+                <button
+                  type="button"
+                  className="admin-qr-history-toggle"
+                  onClick={() => setShowQrHistory((prev) => !prev)}
+                >
+                  {showQrHistory ? 'Hide QR History' : `Show QR History (${filteredQrHistory.length})`}
+                </button>
+              </div>
+            )}
+            {showQrHistory && filteredQrHistory.length > 0 && (
+              <div className="admin-qr-table-list">
+                <p className="admin-qr-list-title">QR History</p>
+                {filteredQrHistory.map((row, index) => (
+                  <div key={`${row.tableNumber}-${row.token}-${index}`} className={`admin-qr-row ${row.active ? '' : 'inactive'}`}>
+                    <div className="admin-qr-row-main">
+                      <strong>Table {row.tableNumber}</strong>
+                      <span>{row.active ? 'Active' : 'Inactive'}</span>
+                      <small>Updated: {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '-'}</small>
+                    </div>
+                    <div className="admin-qr-row-actions">
+                      <button type="button" onClick={() => copyText(row.menuUrl, `Table ${row.tableNumber} URL copied.`)}>Copy</button>
+                      <button type="button" onClick={() => setQrTableNumber(String(row.tableNumber))}>Select</button>
                     </div>
                   </div>
                 ))}
@@ -885,6 +1075,11 @@ function AdminConsole({ apiBaseUrl }) {
 
       {activeSection === 'stats' && (
         <>
+          <section className="admin-stats-range">
+            <button type="button" className={statsRange === 'week' ? 'active' : ''} onClick={() => setStatsRange('week')}>Week</button>
+            <button type="button" className={statsRange === 'month' ? 'active' : ''} onClick={() => setStatsRange('month')}>Month</button>
+            <button type="button" className={statsRange === 'year' ? 'active' : ''} onClick={() => setStatsRange('year')}>Year</button>
+          </section>
           <section className="admin-kpi-grid">
             <article className="admin-kpi-card"><p>New Orders</p><strong>{summary.PLACED}</strong></article>
             <article className="admin-kpi-card"><p>Kitchen Queue</p><strong>{summary.PREPARING}</strong></article>
@@ -896,8 +1091,8 @@ function AdminConsole({ apiBaseUrl }) {
           <section className="admin-insights-grid">
             <article className="admin-chart-card">
               <header>
-                <h3>Today's Sales by Time</h3>
-                <small>{new Date().toLocaleDateString()}</small>
+                <h3>Sales Trend</h3>
+                <small>{statsRange.charAt(0).toUpperCase() + statsRange.slice(1)} view</small>
               </header>
               <div className="line-chart-wrap">
                 <svg viewBox={`0 0 ${salesLine.width} ${salesLine.height}`} className="line-chart" role="img" aria-label="Sales line chart by hour">
@@ -905,21 +1100,21 @@ function AdminConsole({ apiBaseUrl }) {
                   <polyline className="line-chart-path" points={salesLine.points} />
                 </svg>
                 <div className="line-chart-labels">
-                  <span>00</span>
-                  <span>06</span>
-                  <span>12</span>
-                  <span>18</span>
-                  <span>23</span>
+                  {salesSeries.length <= 12
+                    ? salesSeries.map((item) => <span key={item.key}>{item.label}</span>)
+                    : [salesSeries[0], salesSeries[Math.floor(salesSeries.length * 0.25)], salesSeries[Math.floor(salesSeries.length * 0.5)], salesSeries[Math.floor(salesSeries.length * 0.75)], salesSeries[salesSeries.length - 1]]
+                      .map((item, idx) => <span key={`${item.key}-${idx}`}>{item.label}</span>)
+                  }
                 </div>
               </div>
             </article>
             <article className="admin-top-dishes-card">
-              <header><h3>Top Dishes Today</h3></header>
-              {todaysTopDishes.length === 0 ? (
-                <p>No dish sales today yet.</p>
+              <header><h3>Top Dishes ({statsRange})</h3></header>
+              {topDishesForRange.length === 0 ? (
+                <p>No dish sales in selected range.</p>
               ) : (
                 <ul>
-                  {todaysTopDishes.map((dish) => (
+                  {topDishesForRange.map((dish) => (
                     <li key={dish.name}><span>{dish.name}</span><strong>{dish.qty}</strong></li>
                   ))}
                 </ul>
@@ -928,10 +1123,95 @@ function AdminConsole({ apiBaseUrl }) {
           </section>
           {ordersLoading ? (
             <div className="admin-loading">Loading orders...</div>
-          ) : filteredOrders.length === 0 ? (
-            <div className="admin-empty">No orders yet for today's stats.</div>
+          ) : statsOrders.length === 0 ? (
+            <div className="admin-empty">No orders for selected range.</div>
           ) : (
             <p className="admin-stat-footnote">Based on currently loaded orders.</p>
+          )}
+        </>
+      )}
+
+      {activeSection === 'forecast' && (
+        <>
+          <section className="admin-forecast-tabs">
+            <button type="button" className={forecastTab === 'sales' ? 'active' : ''} onClick={() => setForecastTab('sales')}>
+              Sales Forecast
+            </button>
+            <button type="button" className={forecastTab === 'inventory' ? 'active' : ''} onClick={() => setForecastTab('inventory')}>
+              Inventory Forecast
+            </button>
+            <button type="button" onClick={fetchForecast}>Refresh Forecast</button>
+          </section>
+          <section className="admin-forecast-models">
+            <button type="button" className={forecastModel === 'xgboost' ? 'active' : ''} onClick={() => setForecastModel('xgboost')}>
+              XGBoost
+            </button>
+            <button type="button" className={forecastModel === 'lstm' ? 'active' : ''} onClick={() => setForecastModel('lstm')}>
+              LSTM
+            </button>
+            <button type="button" className={forecastModel === 'random_forest' ? 'active' : ''} onClick={() => setForecastModel('random_forest')}>
+              Random Forest
+            </button>
+          </section>
+
+          {forecastLoading ? (
+            <div className="admin-loading">Loading forecast...</div>
+          ) : !forecastData ? (
+            <div className="admin-empty">No forecast data available.</div>
+          ) : forecastTab === 'sales' ? (
+            <>
+              <section className="admin-kpi-grid">
+                <article className="admin-kpi-card"><p>Predicted Orders (7d)</p><strong>{forecastData.predictedOrders ?? 0}</strong></article>
+                <article className="admin-kpi-card"><p>Predicted Revenue (7d)</p><strong>${Number(forecastData.predictedRevenue || 0).toFixed(2)}</strong></article>
+                <article className="admin-kpi-card"><p>Trend Factor</p><strong>{Number(forecastData.trendFactor || 1).toFixed(2)}x</strong></article>
+                <article className="admin-kpi-card"><p>Lookback Days</p><strong>{forecastData.lookbackDays ?? 0}</strong></article>
+                <article className="admin-kpi-card"><p>Engine</p><strong>{forecastData.engineUsed || 'heuristic'}</strong></article>
+                <article className="admin-kpi-card"><p>Model</p><strong>{forecastData.modelUsed || 'trend_baseline'}</strong></article>
+              </section>
+              {forecastData.notes && <p className="admin-stat-footnote">{forecastData.notes}</p>}
+              <section className="admin-top-dishes-card">
+                <header><h3>Top Predicted Demand (7 Days)</h3></header>
+                {!Array.isArray(forecastData.itemForecasts) || forecastData.itemForecasts.length === 0 ? (
+                  <p>No item-level forecast available.</p>
+                ) : (
+                  <ul>
+                    {forecastData.itemForecasts.slice(0, 8).map((item) => (
+                      <li key={`${item.dishId || item.dishName}-sales`}>
+                        <span>{item.dishName}</span>
+                        <strong>{item.predictedDemand}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          ) : (
+            <section className="admin-forecast-table-wrap">
+              <table className="admin-forecast-table">
+                <thead>
+                  <tr>
+                    <th>Dish</th>
+                    <th>Category</th>
+                    <th>Avg/Day</th>
+                    <th>Predicted</th>
+                    <th>Par Stock</th>
+                    <th>Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(forecastData.itemForecasts || []).slice(0, 20).map((item) => (
+                    <tr key={`${item.dishId || item.dishName}-inv`}>
+                      <td>{item.dishName}</td>
+                      <td>{item.category || '-'}</td>
+                      <td>{Number(item.avgDailyDemand || 0).toFixed(2)}</td>
+                      <td>{item.predictedDemand}</td>
+                      <td>{item.recommendedParStock}</td>
+                      <td>{item.recommendation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
           )}
         </>
       )}

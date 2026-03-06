@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-function MenuFilters({ searchTerm = '', onSearch, categories = [], selectedCategory, onCategoryChange, selectedType, onTypeChange }) {
+function MenuFilters({ searchTerm = '', onSearch, selectedType, onTypeChange }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const showSearchInput = searchOpen || Boolean(searchTerm);
 
@@ -24,19 +24,6 @@ function MenuFilters({ searchTerm = '', onSearch, categories = [], selectedCateg
             className="search-input"
           />
         )}
-      </div>
-
-      <div className="category-filter" role="group" aria-label="Category filter">
-        {categories?.map((category) => (
-          <button
-            key={category}
-            type="button"
-            className={`category-btn ${selectedCategory === category ? 'active' : ''}`}
-            onClick={() => onCategoryChange(category)}
-          >
-            {category}
-          </button>
-        ))}
       </div>
 
       <div className="type-filter" role="group" aria-label="Dietary filter">

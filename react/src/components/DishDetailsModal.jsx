@@ -47,6 +47,7 @@ function DishDetailsModal({ dish, onClose }) {
   if (!dish) return null;
 
   const embedUrl = getYoutubeEmbedUrl(dish.videoUrl);
+  const imageSrc = dish.image || dish.imageUrl;
   const addOns = extractAddOns(dish);
 
   const toggleAddon = (name) => {
@@ -75,6 +76,8 @@ function DishDetailsModal({ dish, onClose }) {
             />
           ) : dish.videoUrl ? (
             <video src={dish.videoUrl} autoPlay muted loop playsInline controls />
+          ) : imageSrc ? (
+            <img src={imageSrc} alt={dish.name} className="dish-modal-image" />
           ) : (
             <div className="dish-video-empty">No video available for this dish.</div>
           )}

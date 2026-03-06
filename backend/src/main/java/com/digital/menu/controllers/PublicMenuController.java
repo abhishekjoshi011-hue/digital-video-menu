@@ -2,7 +2,7 @@ package com.digital.menu.controllers;
 
 import com.digital.menu.model.Dish;
 import com.digital.menu.service.DishService;
-import com.digital.menu.service.TableQrService;
+import com.digital.menu.service.TableQrServicePort;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/public")
 public class PublicMenuController {
     private final DishService dishService;
-    private final TableQrService tableQrService;
+    private final TableQrServicePort tableQrService;
 
-    public PublicMenuController(DishService dishService, TableQrService tableQrService) {
+    public PublicMenuController(DishService dishService, TableQrServicePort tableQrService) {
         this.dishService = dishService;
         this.tableQrService = tableQrService;
     }

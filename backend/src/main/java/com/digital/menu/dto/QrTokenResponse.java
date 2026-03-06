@@ -10,7 +10,6 @@ public class QrTokenResponse {
     private boolean active;
     private Instant createdAt;
     private Instant updatedAt;
-    private Instant expiresAt;
 
     public QrTokenResponse(
         String token,
@@ -19,8 +18,7 @@ public class QrTokenResponse {
         Integer tableNumber,
         boolean active,
         Instant createdAt,
-        Instant updatedAt,
-        Instant expiresAt
+        Instant updatedAt
     ) {
         this.token = token;
         this.menuUrl = menuUrl;
@@ -29,7 +27,6 @@ public class QrTokenResponse {
         this.active = active;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-        this.expiresAt = expiresAt;
     }
 
     public String getToken() {
@@ -58,9 +55,5 @@ public class QrTokenResponse {
 
     public Instant getUpdatedAt() {
         return updatedAt;
-    }
-
-    public Instant getExpiresAt() {
-        return expiresAt;
     }
 }

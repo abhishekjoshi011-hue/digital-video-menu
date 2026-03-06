@@ -21,7 +21,6 @@ public class TableQrCode {
     private boolean active = true;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
-    private Instant expiresAt;
 
     public String getId() {
         return id;
@@ -87,11 +86,4 @@ public class TableQrCode {
         this.updatedAt = updatedAt;
     }
 
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
-    public void setExpiresAt(Instant expiresAt) {
-        this.expiresAt = expiresAt;
-    }
 }
