@@ -23,11 +23,13 @@ services:
     networks:
       - restaurant-network
     environment:
-      SPRING_MONGODB_URI: mongodb://mongodb:27017/restaurant_db
+      SPRING_MONGODB_URI: REDACTED_MONGODB_URI
       APP_JWT_SECRET: ZGV2LWxvY2FsLWp3dC1zZWNyZXQtMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMg==
       APP_QR_SECRET: ZGV2LWxvY2FsLXFyLXNlY3JldC0xMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMw==
       APP_AUTH_SETUP_KEY: local-setup-key
       APP_AUTH_ALLOW_PUBLIC_REGISTRATION: "true"
+      APP_SEED_SOY_AFFAIR_ENABLED: ${APP_SEED_SOY_AFFAIR_ENABLED:-false}
+      APP_SEED_SOY_AFFAIR_TENANT_ID: ${APP_SEED_SOY_AFFAIR_TENANT_ID:-soy affair}
     entrypoint: ["sh", "-c", "echo $$SPRING_MONGODB_URI && java -jar app.jar"]
 
   frontend:

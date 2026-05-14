@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import QRCode from 'qrcode';
+import { jsPDF } from 'jspdf';
 import MenuHeader from './components/MenuHeader';
 import MenuFilters from './components/MenuFilters';
 import MenuList from './components/MenuList';
@@ -600,6 +602,7 @@ function AdminConsole({ apiBaseUrl }) {
   const [qrTableNumber, setQrTableNumber] = useState('1');
   const [qrMenuUrl, setQrMenuUrl] = useState('');
   const [qrToken, setQrToken] = useState('');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
   const [qrMessage, setQrMessage] = useState('');
   const [qrRecords, setQrRecords] = useState([]);
   const [qrHistoryRecords, setQrHistoryRecords] = useState([]);
@@ -623,6 +626,112 @@ function AdminConsole({ apiBaseUrl }) {
       return `${fallback} (network error). Verify backend is reachable at ${apiBaseUrl}.`;
     }
     return `${fallback} (HTTP ${status}).`;
+  };
+
+  const sanitizeFilePart = (value) =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .replace(/_+/g, '_');
+
+  const escapeHtml = (value) =>
+    String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+
+  const buildQrPreview = async (menuUrl) => {
+    if (!menuUrl) {
+      setQrCodeDataUrl('');
+      return '';
+    }
+    try {
+      const dataUrl = await QRCode.toDataURL(menuUrl, { margin: 1, width: 320 });
+      setQrCodeDataUrl(dataUrl);
+      return dataUrl;
+    } catch (error) {
+      console.error('Failed to generate QR code image', error);
+      setQrCodeDataUrl('');
+      setQrMessage('Unable to generate QR code preview.');
+      return '';
+    }
+  };
+
+  const downloadQrPdf = async ({ menuUrl, tableNumber, tenantId }) => {
+    if (!menuUrl) return;
+    const resolvedTenantId = sanitizeFilePart(tenantId || auth?.tenantId || 'tenant');
+    const tableSuffix = String(Number(tableNumber) || 0).padStart(2, '0');
+    const fileName = `${resolvedTenantId}_QR_Table_${tableSuffix}.pdf`;
+    const dataUrl = qrMenuUrl === menuUrl && qrCodeDataUrl ? qrCodeDataUrl : await buildQrPreview(menuUrl);
+    if (!dataUrl) return;
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const marginX = 48;
+    let cursorY = 56;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(20);
+    pdf.text(String(tenantId || auth?.tenantId || 'Menu'), marginX, cursorY);
+    cursorY += 28;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(14);
+    pdf.text(`Table ${Number(tableNumber) || ''}`, marginX, cursorY);
+    cursorY += 14;
+
+    pdf.setFontSize(10);
+    const urlLines = pdf.splitTextToSize(menuUrl, pageWidth - marginX * 2);
+    pdf.text(urlLines, marginX, cursorY + 18);
+    cursorY += 18 + urlLines.length * 12 + 12;
+
+    const qrSize = Math.min(360, pageWidth - marginX * 2);
+    const qrX = (pageWidth - qrSize) / 2;
+    pdf.addImage(dataUrl, 'PNG', qrX, cursorY, qrSize, qrSize);
+
+    pdf.save(fileName);
+    setQrMessage(`Downloaded ${fileName}`);
+  };
+
+  const printQr = async ({ menuUrl, tableNumber, tenantId }) => {
+    if (!menuUrl) return;
+    const dataUrl = qrMenuUrl === menuUrl && qrCodeDataUrl ? qrCodeDataUrl : await buildQrPreview(menuUrl);
+    if (!dataUrl) return;
+    const title = `${tenantId || auth?.tenantId || 'Menu'} - Table ${Number(tableNumber) || ''}`;
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=720,height=900');
+    if (!printWindow) {
+      setQrMessage('Popup blocked. Allow popups to print QR.');
+      return;
+    }
+    const safeTitle = escapeHtml(title);
+    const safeUrl = escapeHtml(menuUrl);
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${safeTitle}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+            h1 { font-size: 20px; margin: 0 0 8px; }
+            p { font-size: 12px; margin: 0 0 16px; word-break: break-all; }
+            .qr { width: 420px; max-width: 100%; }
+          </style>
+        </head>
+        <body>
+          <h1>${safeTitle}</h1>
+          <p>${safeUrl}</p>
+          <img class="qr" src="${dataUrl}" alt="QR code" />
+          <script>
+            window.onload = () => { window.focus(); window.print(); };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const fetchOrders = async (tableNumber) => {
@@ -713,6 +822,7 @@ function AdminConsole({ apiBaseUrl }) {
     setOrderSearch('');
     setQrMenuUrl('');
     setQrToken('');
+    setQrCodeDataUrl('');
     setQrMessage('');
     setQrRecords([]);
     setQrHistoryRecords([]);
@@ -743,13 +853,15 @@ function AdminConsole({ apiBaseUrl }) {
     try {
       setQrMessage('');
       const response = await axios.get(`${apiBaseUrl}/api/admin/qr/tables/${parsed}`, { headers: authHeaders });
-      setQrMenuUrl(response.data?.menuUrl || '');
+      const menuUrl = response.data?.menuUrl || '';
+      setQrMenuUrl(menuUrl);
       setQrToken(response.data?.token || '');
-      setQrMessage(`QR URL ready for table ${parsed}.`);
+      await buildQrPreview(menuUrl);
+      setQrMessage(`QR code ready for table ${parsed}.`);
       fetchQrRecords();
       fetchQrHistoryRecords();
     } catch (error) {
-      setQrMessage(getApiErrorMessage(error, 'Unable to generate QR URL'));
+      setQrMessage(getApiErrorMessage(error, 'Unable to generate QR code'));
     }
   };
 
@@ -762,13 +874,15 @@ function AdminConsole({ apiBaseUrl }) {
 
     try {
       const response = await axios.post(`${apiBaseUrl}/api/admin/qr/tables/${parsed}/regenerate`, {}, { headers: authHeaders });
-      setQrMenuUrl(response.data?.menuUrl || '');
+      const menuUrl = response.data?.menuUrl || '';
+      setQrMenuUrl(menuUrl);
       setQrToken(response.data?.token || '');
-      setQrMessage(`QR URL regenerated for table ${parsed}.`);
+      await buildQrPreview(menuUrl);
+      setQrMessage(`QR code regenerated for table ${parsed}.`);
       fetchQrRecords();
       fetchQrHistoryRecords();
     } catch (error) {
-      setQrMessage(getApiErrorMessage(error, 'Unable to regenerate QR URL'));
+      setQrMessage(getApiErrorMessage(error, 'Unable to regenerate QR code'));
     }
   };
 
@@ -781,6 +895,7 @@ function AdminConsole({ apiBaseUrl }) {
       if (Number(qrTableNumber) === tableNumber) {
         setQrMenuUrl('');
         setQrToken('');
+        setQrCodeDataUrl('');
       }
       fetchQrRecords();
       fetchQrHistoryRecords();
@@ -789,14 +904,14 @@ function AdminConsole({ apiBaseUrl }) {
     }
   };
 
-  const copyText = async (value, successMessage) => {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setQrMessage(successMessage);
-    } catch {
-      setQrMessage('Copy failed. Please copy manually.');
-    }
+  const selectQrRow = async (row) => {
+    const tableNumber = Number(row?.tableNumber);
+    if (!Number.isInteger(tableNumber) || tableNumber <= 0) return;
+    setQrTableNumber(String(tableNumber));
+    setQrMenuUrl(row?.menuUrl || '');
+    setQrToken(row?.token || '');
+    setQrMessage('');
+    await buildQrPreview(row?.menuUrl || '');
   };
 
   const filteredQrHistory = useMemo(() => {
@@ -1102,11 +1217,21 @@ function AdminConsole({ apiBaseUrl }) {
             <h3>Table QR Management</h3>
             <div className="admin-qr-controls">
               <input type="number" min="1" value={qrTableNumber} onChange={(event) => setQrTableNumber(event.target.value)} placeholder="Table number" />
-              <button type="button" onClick={generateTableQr}>Generate QR URL</button>
+              <button type="button" onClick={generateTableQr}>Generate QR Code</button>
               <button type="button" onClick={regenerateTableQr}>Regenerate</button>
-              <button type="button" onClick={() => copyText(qrMenuUrl, 'QR URL copied.')} disabled={!qrMenuUrl}>Copy URL</button>
+              <button type="button" onClick={() => downloadQrPdf({ menuUrl: qrMenuUrl, tableNumber: qrTableNumber, tenantId: auth?.tenantId })} disabled={!qrMenuUrl || !qrCodeDataUrl}>
+                Download QR (PDF)
+              </button>
+              <button type="button" onClick={() => printQr({ menuUrl: qrMenuUrl, tableNumber: qrTableNumber, tenantId: auth?.tenantId })} disabled={!qrMenuUrl || !qrCodeDataUrl}>
+                Print QR
+              </button>
             </div>
             {qrMenuUrl && <p className="admin-qr-url">{qrMenuUrl}</p>}
+            {qrCodeDataUrl && (
+              <div className="admin-qr-preview">
+                <img src={qrCodeDataUrl} alt={`QR for table ${qrTableNumber}`} />
+              </div>
+            )}
             {qrToken && <p className="admin-qr-token">Token: {qrToken.slice(0, 28)}...</p>}
             {qrMessage && <p className="admin-qr-message">{qrMessage}</p>}
             {qrRecords.length > 0 && (
@@ -1120,8 +1245,14 @@ function AdminConsole({ apiBaseUrl }) {
                       <small>Updated: {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '-'}</small>
                     </div>
                     <div className="admin-qr-row-actions">
-                      <button type="button" onClick={() => copyText(row.menuUrl, `Table ${row.tableNumber} URL copied.`)} disabled={!row.active}>Copy</button>
-                      <button type="button" onClick={() => setQrTableNumber(String(row.tableNumber))}>Select</button>
+                      <button
+                        type="button"
+                        onClick={() => downloadQrPdf({ menuUrl: row.menuUrl, tableNumber: row.tableNumber, tenantId: row.tenantId || auth?.tenantId })}
+                        disabled={!row.active}
+                      >
+                        Download
+                      </button>
+                      <button type="button" onClick={() => selectQrRow(row)}>Select</button>
                       <button type="button" onClick={() => revokeTableQr(row.tableNumber)} disabled={!row.active}>Remove</button>
                     </div>
                   </div>
@@ -1150,8 +1281,13 @@ function AdminConsole({ apiBaseUrl }) {
                       <small>Updated: {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '-'}</small>
                     </div>
                     <div className="admin-qr-row-actions">
-                      <button type="button" onClick={() => copyText(row.menuUrl, `Table ${row.tableNumber} URL copied.`)}>Copy</button>
-                      <button type="button" onClick={() => setQrTableNumber(String(row.tableNumber))}>Select</button>
+                      <button
+                        type="button"
+                        onClick={() => downloadQrPdf({ menuUrl: row.menuUrl, tableNumber: row.tableNumber, tenantId: row.tenantId || auth?.tenantId })}
+                      >
+                        Download
+                      </button>
+                      <button type="button" onClick={() => selectQrRow(row)}>Select</button>
                     </div>
                   </div>
                 ))}
